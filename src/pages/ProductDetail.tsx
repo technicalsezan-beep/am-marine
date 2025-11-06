@@ -4,32 +4,48 @@ import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ChevronRight } from "lucide-react";
-
-// Sample product data - in a real app, this would come from a database
-const productData: Record<string, any> = {
-  "plc-001": {
-    name: "Siemens S7-1200 PLC",
-    partNumber: "6ES7214-1AG40-0XB0",
-    manufacturer: "Siemens",
-    category: "PLC",
-    description: "Compact CPU with integrated I/O, ideal for small to medium automation tasks in machine and plant construction.",
-    specifications: [
-      { name: "Processor Speed", value: "50 MHz" },
-      { name: "Work Memory", value: "75 KB" },
-      { name: "Load Memory", value: "4 MB" },
-      { name: "Digital Inputs", value: "14" },
-      { name: "Digital Outputs", value: "10" },
-      { name: "Analog Inputs", value: "2" },
-      { name: "Communication Ports", value: "1x Ethernet" },
-      { name: "Operating Temperature", value: "0°C to 55°C" }
-    ],
-    images: ["/placeholder.svg"]
-  }
-};
+import { useEffect, useMemo, useState } from "react";
 
 const ProductDetail = () => {
   const { id } = useParams();
-  const product = productData[id || "plc-001"] || productData["plc-001"];
+  const [product, setProduct] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      if (!id) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/admin/products", { cache: "no-store" });
+        const data = await res.json();
+        const list = Array.isArray(data.products) ? data.products : [];
+        const found = list.find((p: any) => p.id === id);
+        if (!ignore) setProduct(found || null);
+      } catch (e) {
+        if (!ignore) setError("Failed to load product");
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    load();
+    return () => { ignore = true };
+  }, [id]);
+
+  const images: string[] = useMemo(() => {
+    if (!product) return [];
+    if (Array.isArray(product.images) && product.images.length) return product.images;
+    if (product.image) return [product.image];
+    return ["/placeholder.svg"];
+  }, [product]);
+
+  const categoryFromId = useMemo(() => {
+    if (!id) return "automation";
+    const prefix = id.split("-")[0]?.toLowerCase();
+    return prefix === "electronic" ? "electronics" : "automation";
+  }, [id]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -41,11 +57,11 @@ const ProductDetail = () => {
           <div className="flex items-center text-sm text-muted-foreground">
             <Link to="/" className="hover:text-primary">Home</Link>
             <ChevronRight className="h-4 w-4 mx-2" />
-            <Link to="/products/automation" className="hover:text-primary">Products</Link>
+            <Link to={`/products/${categoryFromId}`} className="hover:text-primary">Products</Link>
             <ChevronRight className="h-4 w-4 mx-2" />
-            <Link to="/products/automation" className="hover:text-primary">Automation</Link>
+            <Link to={`/products/${categoryFromId}`} className="hover:text-primary">{categoryFromId === 'electronics' ? 'Electronics' : 'Automation'}</Link>
             <ChevronRight className="h-4 w-4 mx-2" />
-            <span className="text-foreground">{product.category}</span>
+            <span className="text-foreground">{product?.name || ''}</span>
           </div>
         </div>
       </section>
@@ -53,18 +69,24 @@ const ProductDetail = () => {
       {/* Main Product Content */}
       <section className="py-12 flex-grow">
         <div className="container mx-auto px-4">
+          {loading && <p className="text-muted-foreground">Loading...</p>}
+          {error && <p className="text-red-600">{error}</p>}
+          {!loading && !product && !error && (
+            <p className="text-muted-foreground">Product not found.</p>
+          )}
+          {!loading && product && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12">
             {/* Left Column - Images */}
             <div>
               <div className="aspect-square bg-muted rounded-lg mb-4 flex items-center justify-center">
                 <img
-                  src={product.images[0]}
+                  src={images[0]}
                   alt={product.name}
                   className="w-full h-full object-cover rounded-lg"
                 />
               </div>
               <div className="grid grid-cols-4 gap-2">
-                {product.images.map((img: string, idx: number) => (
+                {images.map((img: string, idx: number) => (
                   <div key={idx} className="aspect-square bg-muted rounded-lg cursor-pointer hover:ring-2 ring-primary">
                     <img
                       src={img}
@@ -82,21 +104,13 @@ const ProductDetail = () => {
               <div className="space-y-2 mb-6">
                 <p className="text-lg">
                   <span className="text-muted-foreground">Part Number:</span>{" "}
-                  <span className="font-semibold text-foreground">{product.partNumber}</span>
-                </p>
-                <p className="text-lg">
-                  <span className="text-muted-foreground">Manufacturer:</span>{" "}
-                  <span className="font-semibold text-foreground">{product.manufacturer}</span>
-                </p>
-                <p className="text-lg">
-                  <span className="text-muted-foreground">Category:</span>{" "}
-                  <span className="font-semibold text-foreground">{product.category}</span>
+                  <span className="font-semibold text-foreground">{product.partNumber || '-'}</span>
                 </p>
               </div>
 
               <div className="mb-8">
                 <h2 className="text-xl font-bold mb-3 text-foreground">Description</h2>
-                <p className="text-muted-foreground leading-relaxed">{product.description}</p>
+                <p className="text-muted-foreground leading-relaxed">{product.description || 'No description available.'}</p>
               </div>
 
               <div className="space-y-4">
@@ -111,22 +125,24 @@ const ProductDetail = () => {
           </div>
 
           {/* Technical Specifications Section */}
-          <Card>
-            <CardContent className="p-8">
-              <h2 className="text-2xl font-bold mb-6 text-foreground">Technical Specifications</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {product.specifications.map((spec: any, idx: number) => (
-                  <div
-                    key={idx}
-                    className="flex justify-between py-3 border-b border-border last:border-0"
-                  >
-                    <span className="font-semibold text-foreground">{spec.name}</span>
-                    <span className="text-muted-foreground">{spec.value}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          {product.specifications && product.specifications.length > 0 && (
+            <Card>
+              <CardContent className="p-8">
+                <h2 className="text-2xl font-bold mb-6 text-foreground">Technical Specifications</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {product.specifications.map((spec: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className="flex justify-between py-3 border-b border-border last:border-0"
+                    >
+                      <span className="font-semibold text-foreground">{spec.name}</span>
+                      <span className="text-muted-foreground">{spec.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </section>
 
