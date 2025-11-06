@@ -1,6 +1,7 @@
-export const config = { runtime: 'edge' };
+export const config = { runtime: 'nodejs' };
 
 import { put, del, list } from '@vercel/blob';
+import Busboy from 'busboy';
 
 const PRODUCTS_BLOB_KEY = 'data/products.json';
 
@@ -21,73 +22,86 @@ async function readProducts(): Promise<{ products: any[] }> {
     if (!res.ok) return { products: [] };
     return res.json();
   } catch {
-    // Fallback for local dev without Blob
     return getMem();
   }
 }
 
 async function writeProducts(data: any) {
   try {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    await put(PRODUCTS_BLOB_KEY, blob, {
+    const payload = Buffer.from(JSON.stringify(data, null, 2));
+    await put(PRODUCTS_BLOB_KEY, payload, {
       access: 'public',
       contentType: 'application/json',
       addRandomSuffix: false,
     });
   } catch {
-    // Fallback for local dev without Blob
     const mem = getMem();
     mem.products = Array.isArray(data?.products) ? [...data.products] : [];
   }
 }
 
-export default async function handler(request: Request): Promise<Response> {
+function parseMultipart(req: any): Promise<{ fields: Record<string, string>; file?: { buffer: Buffer; filename: string; mimetype: string } }> {
+  return new Promise((resolve, reject) => {
+    const bb = Busboy({ headers: req.headers });
+    const fields: Record<string, string> = {};
+    let fileData: Buffer | undefined;
+    let filename = '';
+    let mimetype = '';
+
+    bb.on('file', (_name, file, info) => {
+      filename = info.filename;
+      mimetype = info.mimeType || info.mime || '';
+      const chunks: Buffer[] = [];
+      file.on('data', (d: Buffer) => chunks.push(d));
+      file.on('end', () => {
+        fileData = Buffer.concat(chunks);
+      });
+    });
+
+    bb.on('field', (name, val) => {
+      fields[name] = val;
+    });
+
+    bb.on('error', reject);
+    bb.on('finish', () => {
+      resolve(fileData ? { fields, file: { buffer: fileData, filename, mimetype } } : { fields });
+    });
+
+    req.pipe(bb);
+  });
+}
+
+export default async function handler(req: any, res: any) {
   try {
-    if (request.method === 'GET') {
+    if (req.method === 'GET') {
       const data = await readProducts();
-      return new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } });
+      return res.json(data);
     }
 
-    if (request.method === 'POST') {
-      const formData = await request.formData();
-      const category = formData.get('category') as string;
-      const name = formData.get('name') as string;
-      const description = formData.get('description') as string;
-      const link = formData.get('link') as string;
-      const imageFile = formData.get('image') as File | null;
+    if (req.method === 'POST') {
+      const { fields, file } = await parseMultipart(req);
+      const category = fields['category'];
+      const name = fields['name'];
+      const description = fields['description'];
+      const link = fields['link'];
 
-      if (!category || !name || !description || !link || !imageFile) {
-        return new Response(JSON.stringify({ error: 'All fields are required' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
+      if (!category || !name || !description || !link || !file) {
+        return res.status(400).json({ error: 'All fields are required' });
       }
 
       const timestamp = Date.now();
-      const filename = `${timestamp}-${(imageFile as File).name.replace(/\s+/g, '-')}`;
-
-      async function toDataUrl(file: File): Promise<string> {
-        const buf = await file.arrayBuffer();
-        let binary = '';
-        const bytes = new Uint8Array(buf);
-        const chunk = 0x8000;
-        for (let i = 0; i < bytes.length; i += chunk) {
-          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as any);
-        }
-        const base64 = btoa(binary);
-        return `data:${file.type};base64,${base64}`;
-      }
+      const filename = `${timestamp}-${(file.filename || 'upload').replace(/\s+/g, '-')}`;
 
       let url: string;
       try {
-        const result = await put(`products/${filename}`, imageFile as File, {
+        const result = await put(`products/${filename}`, file.buffer, {
           access: 'public',
-          contentType: (imageFile as File).type,
+          contentType: file.mimetype || 'application/octet-stream',
         });
         url = result.url;
       } catch {
-        // Local fallback: embed as data URL so UI still renders
-        url = await toDataUrl(imageFile as File);
+        const base64 = file.buffer.toString('base64');
+        url = `data:${file.mimetype || 'application/octet-stream'};base64,${base64}`;
       }
 
       const data = await readProducts();
@@ -104,57 +118,32 @@ export default async function handler(request: Request): Promise<Response> {
       data.products.push(newProduct);
       await writeProducts(data);
 
-      return new Response(
-        JSON.stringify({ success: true, product: newProduct, message: 'Product added successfully' }),
-        { headers: { 'Content-Type': 'application/json' } }
-      );
+      return res.json({ success: true, product: newProduct, message: 'Product added successfully' });
     }
 
-    if (request.method === 'DELETE') {
-      const urlObj = new URL(request.url);
-      const id = urlObj.searchParams.get('id');
-      if (!id) {
-        return new Response(JSON.stringify({ error: 'Product ID is required' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
+    if (req.method === 'DELETE') {
+      const id = (req.query && (req.query.id as string)) || (new URL(req.url, 'http://localhost').searchParams.get('id'));
+      if (!id) return res.status(400).json({ error: 'Product ID is required' });
 
       const data = await readProducts();
       const index = data.products.findIndex((p: any) => p.id === id);
-      if (index === -1) {
-        return new Response(JSON.stringify({ error: 'Product not found' }), {
-          status: 404,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
+      if (index === -1) return res.status(404).json({ error: 'Product not found' });
 
       const product = data.products[index];
       try {
         if (typeof product.image === 'string' && product.image.includes('vercel-storage.com')) {
           await del(product.image);
         }
-      } catch (err) {
-        // non-fatal in local fallback
-      }
+      } catch {}
 
       data.products.splice(index, 1);
       await writeProducts(data);
 
-      return new Response(JSON.stringify({ success: true, message: 'Product deleted successfully' }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.json({ success: true, message: 'Product deleted successfully' });
     }
 
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
-    console.error('Error handling request:', error);
-    return new Response(JSON.stringify({ error: 'Server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(500).json({ error: 'Server error' });
   }
 }
