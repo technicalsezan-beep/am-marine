@@ -123,14 +123,15 @@ const ProductDetail = () => {
               </div>
             </div>
           </div>
+          )}
 
           {/* Technical Specifications Section */}
-          {product.specifications && product.specifications.length > 0 && (
+          {product?.specifications && product.specifications.length > 0 && (
             <Card>
               <CardContent className="p-8">
                 <h2 className="text-2xl font-bold mb-6 text-foreground">Technical Specifications</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {product.specifications.map((spec: any, idx: number) => (
+                  {product?.specifications?.map((spec: any, idx: number) => (
                     <div
                       key={idx}
                       className="flex justify-between py-3 border-b border-border last:border-0"
