@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 20%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 20%;
+
+    /* Primary: Deep Professional Blue from logo */
+    --primary: 234 42% 39%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary: Light neutral gray */
+    --secondary: 220 13% 96%;
+    --secondary-foreground: 0 0% 20%;
+
+    /* Muted: Light backgrounds */
+    --muted: 220 13% 96%;
+    --muted-foreground: 0 0% 45%;
+
+    /* Accent: Strong Red/Rust from logo for CTAs */
+    --accent: 6 52% 46%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 234 42% 39%;
+
+    --radius: 0.5rem;
+
+    /* Gradient Colors for Professional Blue Gradient */
+    --gradient-from: 210 70% 15%;  /* Deep navy blue */
+    --gradient-to: 210 55% 25%;    /* Lighter blue */
+  }
+
+  .dark {
+    --background: 0 0% 10%;
+    --foreground: 0 0% 95%;
+
+    --card: 0 0% 15%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 0 0% 15%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 234 42% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 20%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 0 0% 20%;
+    --muted-foreground: 0 0% 65%;
+
+    --accent: 6 52% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62.8% 40.6%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 25%;
+    --input: 0 0% 25%;
+    --ring: 234 42% 55%;
+
+    --gradient-from: 210 75% 12%;
+    --gradient-to: 210 60% 20%;
+  }
+}
+
+@layer utilities {
+  .bg-gradient-hero {
+    background: linear-gradient(135deg, hsl(var(--gradient-from)) 0%, hsl(var(--gradient-to)) 100%);
+  }
+  
+  .bg-gradient-cta {
+    background: linear-gradient(180deg, hsl(var(--gradient-from)) 0%, hsl(var(--gradient-to)) 100%);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
