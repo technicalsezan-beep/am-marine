@@ -16,24 +16,27 @@ interface Product {
   category: string
   name: string
   description: string
-  image: string
+  image?: string // backward compat
+  images?: string[]
   link: string
+  partNumber?: string
 }
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("hydraulics")
+  const [activeTab, setActiveTab] = useState("automation")
   
   // Form state
   const [formData, setFormData] = useState({
-    category: "hydraulics",
+    category: "automation",
     name: "",
     description: "",
+    partNumber: "",
   })
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string>("")
+  const [imageFiles, setImageFiles] = useState<File[]>([])
+  const [imagePreviews, setImagePreviews] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
@@ -68,14 +71,21 @@ export default function AdminDashboard() {
   }
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setImageFile(file)
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string)
-      }
-      reader.readAsDataURL(file)
+    const files = Array.from(e.target.files || [])
+    setImageFiles(files)
+    if (files.length) {
+      Promise.all(
+        files.map(
+          (file) =>
+            new Promise<string>((resolve) => {
+              const reader = new FileReader()
+              reader.onloadend = () => resolve(reader.result as string)
+              reader.readAsDataURL(file)
+            })
+        )
+      ).then((previews) => setImagePreviews(previews))
+    } else {
+      setImagePreviews([])
     }
   }
 
@@ -88,11 +98,10 @@ export default function AdminDashboard() {
       const formDataToSend = new FormData()
       formDataToSend.append("category", formData.category)
       formDataToSend.append("name", formData.name)
+      formDataToSend.append("partNumber", formData.partNumber)
       formDataToSend.append("description", formData.description)
       formDataToSend.append("link", getCategoryLink(formData.category))
-      if (imageFile) {
-        formDataToSend.append("image", imageFile)
-      }
+      imageFiles.forEach((file) => formDataToSend.append("images", file))
 
       const response = await fetch("/api/admin/products", {
         method: "POST",
@@ -103,9 +112,9 @@ export default function AdminDashboard() {
 
       if (response.ok) {
         setMessage({ type: 'success', text: 'Product added successfully!' })
-        setFormData({ category: "hydraulics", name: "", description: "" })
-        setImageFile(null)
-        setImagePreview("")
+        setFormData({ category: "automation", name: "", description: "", partNumber: "" })
+        setImageFiles([])
+        setImagePreviews([])
         fetchProducts()
       } else {
         setMessage({ type: 'error', text: data.error || 'Failed to add product' })
@@ -137,11 +146,8 @@ export default function AdminDashboard() {
   }
 
   const categories = [
-    { value: "hydraulics", label: "Hydraulics", link: "/products/hydraulics" },
-    { value: "marine-engines", label: "Marine Engines", link: "/products/marine-engines" },
-    { value: "navigation", label: "Navigation & Radar", link: "/products/navigation-radar" },
-    { value: "electrical", label: "Electrical & Automation", link: "/products/electric-automation" },
-    { value: "safety", label: "Safety Items", link: "/products/safety-items" },
+    { value: "automation", label: "Automation", link: "/products/automation" },
+    { value: "electronic", label: "Electronic", link: "/products/electronic" },
   ]
 
   // Get link based on category
@@ -221,6 +227,17 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="partNumber">Part Number</Label>
+                  <Input
+                    id="partNumber"
+                    value={formData.partNumber}
+                    onChange={(e) => setFormData({ ...formData, partNumber: e.target.value })}
+                    placeholder="Enter part number"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="description">Description</Label>
                   <Textarea
                     id="description"
@@ -238,21 +255,22 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="image">Product Image</Label>
+                  <Label htmlFor="image">Product Images</Label>
                   <Input
                     id="image"
                     type="file"
                     accept="image/*"
+                    multiple
                     onChange={handleImageChange}
                     required
                   />
-                  {imagePreview && (
-                    <div className="mt-2 relative w-full h-40 rounded-md overflow-hidden border">
-                      <img
-                        src={imagePreview}
-                        alt="Preview"
-                        className="w-full h-full object-cover"
-                      />
+                  {imagePreviews.length > 0 && (
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {imagePreviews.map((src, idx) => (
+                        <div key={idx} className="relative w-full h-24 rounded-md overflow-hidden border">
+                          <img src={src} alt={`Preview ${idx + 1}`} className="w-full h-full object-cover" />
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -276,10 +294,10 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid grid-cols-5 mb-6">
+                <TabsList className="grid grid-cols-2 mb-6">
                   {categories.map((cat) => (
                     <TabsTrigger key={cat.value} value={cat.value}>
-                      {cat.label.split(' ')[0]}
+                      {cat.label}
                     </TabsTrigger>
                   ))}
                 </TabsList>
@@ -298,13 +316,16 @@ export default function AdminDashboard() {
                               <div className="flex gap-4">
                                 <div className="relative w-24 h-24 rounded-md overflow-hidden flex-shrink-0">
                                   <img
-                                    src={product.image}
+                                    src={(product.images && product.images[0]) || product.image || ""}
                                     alt={product.name}
                                     className="w-full h-full object-cover"
                                   />
                                 </div>
                                 <div className="flex-1">
                                   <h3 className="font-semibold mb-1">{product.name}</h3>
+                                  {product.partNumber && (
+                                    <p className="text-xs text-muted-foreground mb-1">Part No: {product.partNumber}</p>
+                                  )}
                                   <p className="text-sm text-muted-foreground mb-2">
                                     {product.description}
                                   </p>
