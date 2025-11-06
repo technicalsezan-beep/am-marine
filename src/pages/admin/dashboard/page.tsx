@@ -102,6 +102,9 @@ export default function AdminDashboard() {
       formDataToSend.append("description", formData.description)
       formDataToSend.append("link", getCategoryLink(formData.category))
       imageFiles.forEach((file) => formDataToSend.append("images", file))
+      if (imageFiles[0]) {
+        formDataToSend.append("image", imageFiles[0])
+      }
 
       const response = await fetch("/api/admin/products", {
         method: "POST",
